@@ -14,6 +14,9 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * 号段模式ID生成器
+ */
 public class SegmentIDGenImpl implements IDGen {
     private static final Logger logger = LoggerFactory.getLogger(SegmentIDGenImpl.class);
 
@@ -37,9 +40,21 @@ public class SegmentIDGenImpl implements IDGen {
      * 一个Segment维持时间为15分钟
      */
     private static final long SEGMENT_DURATION = 15 * 60 * 1000L;
+    /**
+     * 线程池，用于执行异步任务，比如异步准备双buffer中的另一个buffer
+     */
     private ExecutorService service = new ThreadPoolExecutor(5, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<Runnable>(), new UpdateThreadFactory());
+    /**
+     * 标记自己是否初始化完毕
+     */
     private volatile boolean initOK = false;
+    /**
+     * cache，存储所有业务key对应双buffer号段，所以是基于内存的发号方式
+     */
     private Map<String, SegmentBuffer> cache = new ConcurrentHashMap<String, SegmentBuffer>();
+    /**
+     * 查询数据库的dao
+     */
     private IDAllocDao dao;
 
     public static class UpdateThreadFactory implements ThreadFactory {
@@ -62,6 +77,7 @@ public class SegmentIDGenImpl implements IDGen {
         // 确保加载到kv后才初始化成功
         updateCacheFromDb();
         initOK = true;
+        // 定时1min同步一次db和cache
         updateCacheFromDbAtEveryMinute();
         return initOK;
     }
@@ -84,15 +100,21 @@ public class SegmentIDGenImpl implements IDGen {
         }, 60, 60, TimeUnit.SECONDS);
     }
 
+    /**
+     * 将数据库表中的tags同步到cache中
+     */
     private void updateCacheFromDb() {
         logger.info("update cache from db");
         StopWatch sw = new Slf4JStopWatch();
         try {
+            // 获取数据库表中所有的biz_tag
             List<String> dbTags = dao.getAllTags();
             if (dbTags == null || dbTags.isEmpty()) {
                 return;
             }
+            // 获取当前的cache中所有的tag
             List<String> cacheTags = new ArrayList<String>(cache.keySet());
+            // 数据库中的tag
             Set<String> insertTagsSet = new HashSet<>(dbTags);
             Set<String> removeTagsSet = new HashSet<>(cacheTags);
             //db中新加的tags灌进cache
@@ -102,9 +124,11 @@ public class SegmentIDGenImpl implements IDGen {
                     insertTagsSet.remove(tmp);
                 }
             }
+            // 1. db中新加的tags灌进cache，并实例化初始对应的SegmentBuffer
             for (String tag : insertTagsSet) {
                 SegmentBuffer buffer = new SegmentBuffer();
                 buffer.setKey(tag);
+                // 零值初始化当前正在使用的Segment号段
                 Segment segment = buffer.getCurrent();
                 segment.setValue(new AtomicLong(0));
                 segment.setMax(0);
@@ -112,7 +136,7 @@ public class SegmentIDGenImpl implements IDGen {
                 cache.put(tag, buffer);
                 logger.info("Add tag {} from db to IdCache, SegmentBuffer {}", tag, buffer);
             }
-            //cache中已失效的tags从cache删除
+            // 2. cache中已失效的tags从cache删除
             for(int i = 0; i < dbTags.size(); i++){
                 String tmp = dbTags.get(i);
                 if(removeTagsSet.contains(tmp)){

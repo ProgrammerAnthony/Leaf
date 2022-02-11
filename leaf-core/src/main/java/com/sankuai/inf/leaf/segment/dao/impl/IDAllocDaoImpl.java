@@ -19,13 +19,17 @@ public class IDAllocDaoImpl implements IDAllocDao {
     SqlSessionFactory sqlSessionFactory;
 
     public IDAllocDaoImpl(DataSource dataSource) {
+        // 使用mybatis，手动初始化sqlSessionFactory
         TransactionFactory transactionFactory = new JdbcTransactionFactory();
         Environment environment = new Environment("development", transactionFactory, dataSource);
         Configuration configuration = new Configuration(environment);
         configuration.addMapper(IDAllocMapper.class);
         sqlSessionFactory = new SqlSessionFactoryBuilder().build(configuration);
     }
-
+    /**
+     * 获取所有的业务key对应的发号配置
+     * @return
+     */
     @Override
     public List<LeafAlloc> getAllLeafAllocs() {
         SqlSession sqlSession = sqlSessionFactory.openSession(false);
@@ -36,18 +40,32 @@ public class IDAllocDaoImpl implements IDAllocDao {
         }
     }
 
+    /**
+     * 更新数据库的最大id值，并返回LeafAlloc
+     * @param tag
+     * @return
+     */
     @Override
     public LeafAlloc updateMaxIdAndGetLeafAlloc(String tag) {
         SqlSession sqlSession = sqlSessionFactory.openSession();
         try {
+            // 更新tag对应记录中的max_id，max_id = max_id + step，step为数据库中设置的step
             sqlSession.update("com.sankuai.inf.leaf.segment.dao.IDAllocMapper.updateMaxId", tag);
+            // 获取更新完的记录，封装成LeafAlloc对象返回
             LeafAlloc result = sqlSession.selectOne("com.sankuai.inf.leaf.segment.dao.IDAllocMapper.getLeafAlloc", tag);
+            // 提交事务
             sqlSession.commit();
             return result;
         } finally {
             sqlSession.close();
         }
     }
+
+    /**
+     * 依据动态调整的step值，更新DB的最大id值，并返回更新后的记录
+     * @param leafAlloc
+     * @return
+     */
 
     @Override
     public LeafAlloc updateMaxIdByCustomStepAndGetLeafAlloc(LeafAlloc leafAlloc) {
@@ -62,8 +80,13 @@ public class IDAllocDaoImpl implements IDAllocDao {
         }
     }
 
+    /**
+     * 从数据库查询出所有的biz_tag
+     * @return
+     */
     @Override
     public List<String> getAllTags() {
+        // 设置false，表示手动事务
         SqlSession sqlSession = sqlSessionFactory.openSession(false);
         try {
             return sqlSession.selectList("com.sankuai.inf.leaf.segment.dao.IDAllocMapper.getAllTags");

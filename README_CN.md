@@ -1,4 +1,17 @@
 # Leaf
+本项目基于美团Leaf做了代码注释和部分优化,参考文章如下：
+
+[Leaf：美团分布式ID生成服务开源](https://tech.meituan.com/2019/03/07/open-source-project-leaf.html)
+
+[Leaf——美团点评分布式ID生成系统](https://tech.meituan.com/2017/04/21/mt-leaf.html)
+
+[美团Leaf源码——号段模式源码解析](https://blog.csdn.net/bskfnvjtlyzmv867/article/details/90175306)
+
+[美团Leaf源码——snowflake模式源码解析](https://blog.csdn.net/bskfnvjtlyzmv867/article/details/90247036)
+
+[美团分布式ID生成框架Leaf源码分析及优化改进](https://www.jianshu.com/p/a43c469d0971)
+
+------------------------------
 
 > There are no two identical leaves in the world.
 >

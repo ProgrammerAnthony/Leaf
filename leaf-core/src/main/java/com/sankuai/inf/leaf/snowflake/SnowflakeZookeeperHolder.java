@@ -46,48 +46,62 @@ public class SnowflakeZookeeperHolder {
         this.connectionString = connectionString;
     }
 
+    /**
+     * 对于workerID的分配，当服务集群数量较小的情况下，完全可以手动配置。
+     * Leaf服务规模较大，动手配置成本太高。所以使用Zookeeper持久顺序节点的特性自动对snowflake节点配置wokerID。
+     * @return
+     */
     public boolean init() {
         try {
+            //1 使用Curator框架链接zookeeper
             CuratorFramework curator = createWithOptions(connectionString, new RetryUntilElapsed(1000, 4), 10000, 6000);
+            //启动
             curator.start();
+            // 2. 检查/snowflake/${leaf.name}/forever根节点是否存在
             Stat stat = curator.checkExists().forPath(PATH_FOREVER);
             if (stat == null) {
                 //不存在根节点,机器第一次启动,创建/snowflake/ip:port-000000000,并上传数据
                 zk_AddressNode = createNode(curator);
-                //worker id 默认是0
+                // 在本地缓存workerId，默认是0（因为此时还没有从zk获取到分配的workID，0是成员变量的默认值，这里可以不从zk_AddressNode解析workerID，直接默认0）
                 updateLocalWorkerID(workerID);
-                //定时上报本机时间给forever节点
+                // 定时上报本机时间戳给/snowflake/${leaf.name}/forever根节点
                 ScheduledUploadData(curator, zk_AddressNode);
                 return true;
             } else {
+                // 4. 存在的话，说明不是第一次启动leaf应用，zk存在以前的【自身节点标识和时间数据】
                 Map<String, Integer> nodeMap = Maps.newHashMap();//ip:port->00001
                 Map<String, String> realNode = Maps.newHashMap();//ip:port->(ipport-000001)
-                //存在根节点,先检查是否有属于自己的根节点
+                // 存在根节点，先获取根节点下所有的子节点，检查是否有属于自己的节点
                 List<String> keys = curator.getChildren().forPath(PATH_FOREVER);
                 for (String key : keys) {
                     String[] nodeKey = key.split("-");
                     realNode.put(nodeKey[0], key);
                     nodeMap.put(nodeKey[0], Integer.parseInt(nodeKey[1]));
                 }
+                // 获取zk上曾经记录的workerId，这里可以看出workerId的分配是依靠zk的自增
                 Integer workerid = nodeMap.get(listenAddress);
                 if (workerid != null) {
-                    //有自己的节点,zk_AddressNode=ip:port
+                    // 有自己的节点，zk_AddressNode = /snowflake/${leaf.name}/forever+ip:port-0000001
                     zk_AddressNode = PATH_FOREVER + "/" + realNode.get(listenAddress);
-                    workerID = workerid;//启动worder时使用会使用
+                    workerID = workerid;// 启动worker时使用会使用
+                    // 检查该节点当前的系统时间是否在最后一次上报时间之后
                     if (!checkInitTimeStamp(curator, zk_AddressNode)) {
+                        // 如果不滞后，则启动失败
                         throw new CheckLastTimeException("init timestamp check error,forever node timestamp gt this node time");
                     }
                     //准备创建临时节点
                     doService(curator);
+                    // 更新本地缓存的workerID
                     updateLocalWorkerID(workerID);
                     LOGGER.info("[Old NODE]find forever node have this endpoint ip-{} port-{} workid-{} childnode and start SUCCESS", ip, port, workerID);
                 } else {
-                    //表示新启动的节点,创建持久节点 ,不用check时间
+                    // 不存在自己的节点则表示是一个新启动的节点，则创建持久节点，不需要check时间
                     String newNode = createNode(curator);
                     zk_AddressNode = newNode;
                     String[] nodeKey = newNode.split("-");
                     workerID = Integer.parseInt(nodeKey[1]);
                     doService(curator);
+                    // 更新本地缓存的workerID
                     updateLocalWorkerID(workerID);
                     LOGGER.info("[New NODE]can not find node on forever node that endpoint ip-{} port-{} workid-{},create own node on forever node and start SUCCESS ", ip, port, workerID);
                 }
@@ -95,6 +109,7 @@ public class SnowflakeZookeeperHolder {
         } catch (Exception e) {
             LOGGER.error("Start node ERROR {}", e);
             try {
+                // 5. 如果启动出错，则读取本地缓存的workerID.properties文件中的workId，弱依赖zk。
                 Properties properties = new Properties();
                 properties.load(new FileInputStream(new File(PROP_PATH.replace("{port}", port + ""))));
                 workerID = Integer.valueOf(properties.getProperty("workerID"));
