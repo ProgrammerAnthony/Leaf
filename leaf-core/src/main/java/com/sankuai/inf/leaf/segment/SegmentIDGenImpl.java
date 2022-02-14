@@ -133,6 +133,7 @@ public class SegmentIDGenImpl implements IDGen {
                 segment.setValue(new AtomicLong(0));
                 segment.setMax(0);
                 segment.setStep(0);
+                //存储所有业务key对应双buffer号段
                 cache.put(tag, buffer);
                 logger.info("Add tag {} from db to IdCache, SegmentBuffer {}", tag, buffer);
             }
@@ -228,6 +229,7 @@ public class SegmentIDGenImpl implements IDGen {
             buffer.rLock().lock();
             try {
                 final Segment segment = buffer.getCurrent();
+                //如果当前buffer使用了10%，就加载下一个segment
                 if (!buffer.isNextReady() && (segment.getIdle() < 0.9 * segment.getStep()) && buffer.getThreadRunning().compareAndSet(false, true)) {
                     service.execute(new Runnable() {
                         @Override

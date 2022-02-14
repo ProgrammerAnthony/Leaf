@@ -35,7 +35,7 @@ public class SegmentService {
     public SegmentService() throws SQLException, InitException {
         // 1. 加载leaf.properties配置文件
         Properties properties = PropertyFactory.getProperties();
-        // 是否开启号段模式
+        // 是否开启号段模式,开启后才去初始化datasource
         boolean flag = Boolean.parseBoolean(properties.getProperty(Constants.LEAF_SEGMENT_ENABLE, "true"));
         if (flag) {
             // 2. 创建Druid dataSource
@@ -45,10 +45,10 @@ public class SegmentService {
             dataSource.setPassword(properties.getProperty(Constants.LEAF_JDBC_PASSWORD));
             dataSource.init();
 
-            // 3. 创建Dao
+            // 3. 创建Dao，利用mybatis完成LeafAlloc处理
             IDAllocDao dao = new IDAllocDaoImpl(dataSource);
 
-            // 4. 创建ID生成器实例SegmentIDGenImpl
+            // 4. 创建ID生成器实例SegmentIDGenImpl，利用dao完成id生成逻辑
             idGen = new SegmentIDGenImpl();
             ((SegmentIDGenImpl) idGen).setDao(dao);
             // 初始化SegmentIDGenImpl(加载db的tags至内存cache中，并开启定时同步更新任务)

@@ -197,7 +197,7 @@ public class SnowflakeZookeeperHolder {
     }
 
     /**
-     * 在节点文件系统上缓存一个workid值,zk失效,机器重启时保证能够正常启动
+     * 在节点文件系统上缓存一个workid值,zk失效,机器重启时保证能够正常启动，弱依赖zookeeper的设计
      *
      * @param workerID
      */
